@@ -4,31 +4,32 @@
 
 package io.flutter.plugins.videoplayer;
 
-import static com.google.android.exoplayer2.Player.REPEAT_MODE_ALL;
-import static com.google.android.exoplayer2.Player.REPEAT_MODE_OFF;
-
 import android.content.Context;
-import android.media.AudioManager;
 import android.net.Uri;
 import android.os.Build;
+import android.util.Log;
+import android.util.LongSparseArray;
 import android.view.Surface;
 import com.google.android.exoplayer2.C;
 import com.google.android.exoplayer2.ExoPlaybackException;
 import com.google.android.exoplayer2.ExoPlayerFactory;
 import com.google.android.exoplayer2.Format;
+import com.google.android.exoplayer2.PlaybackParameters;
 import com.google.android.exoplayer2.Player;
-import com.google.android.exoplayer2.Player.DefaultEventListener;
 import com.google.android.exoplayer2.SimpleExoPlayer;
+import com.google.android.exoplayer2.Timeline;
 import com.google.android.exoplayer2.audio.AudioAttributes;
 import com.google.android.exoplayer2.extractor.DefaultExtractorsFactory;
 import com.google.android.exoplayer2.source.ExtractorMediaSource;
 import com.google.android.exoplayer2.source.MediaSource;
+import com.google.android.exoplayer2.source.TrackGroupArray;
 import com.google.android.exoplayer2.source.dash.DashMediaSource;
 import com.google.android.exoplayer2.source.dash.DefaultDashChunkSource;
 import com.google.android.exoplayer2.source.hls.HlsMediaSource;
 import com.google.android.exoplayer2.source.smoothstreaming.DefaultSsChunkSource;
 import com.google.android.exoplayer2.source.smoothstreaming.SsMediaSource;
 import com.google.android.exoplayer2.trackselection.DefaultTrackSelector;
+import com.google.android.exoplayer2.trackselection.TrackSelectionArray;
 import com.google.android.exoplayer2.trackselection.TrackSelector;
 import com.google.android.exoplayer2.upstream.DataSource;
 import com.google.android.exoplayer2.upstream.DefaultDataSourceFactory;
@@ -40,15 +41,16 @@ import io.flutter.plugin.common.MethodCall;
 import io.flutter.plugin.common.MethodChannel;
 import io.flutter.plugin.common.MethodChannel.MethodCallHandler;
 import io.flutter.plugin.common.MethodChannel.Result;
-import io.flutter.plugin.common.PluginRegistry;
 import io.flutter.plugin.common.PluginRegistry.Registrar;
-import io.flutter.view.FlutterNativeView;
 import io.flutter.view.TextureRegistry;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+
+import static com.google.android.exoplayer2.Player.REPEAT_MODE_ALL;
+import static com.google.android.exoplayer2.Player.REPEAT_MODE_OFF;
 
 public class VideoPlayerPlugin implements MethodCallHandler {
 
@@ -83,7 +85,7 @@ public class VideoPlayerPlugin implements MethodCallHandler {
       Uri uri = Uri.parse(dataSource);
 
       DataSource.Factory dataSourceFactory;
-      if (uri.getScheme().equals("asset") || uri.getScheme().equals("file")) {
+      if ("asset".equals(uri.getScheme()) || "file".equals(uri.getScheme())) {
         dataSourceFactory = new DefaultDataSourceFactory(context, "ExoPlayer");
       } else {
         dataSourceFactory =
@@ -107,13 +109,13 @@ public class VideoPlayerPlugin implements MethodCallHandler {
       switch (type) {
         case C.TYPE_SS:
           return new SsMediaSource.Factory(
-                  new DefaultSsChunkSource.Factory(mediaDataSourceFactory),
-                  new DefaultDataSourceFactory(context, null, mediaDataSourceFactory))
+              new DefaultSsChunkSource.Factory(mediaDataSourceFactory),
+              new DefaultDataSourceFactory(context, null, mediaDataSourceFactory))
               .createMediaSource(uri);
         case C.TYPE_DASH:
           return new DashMediaSource.Factory(
-                  new DefaultDashChunkSource.Factory(mediaDataSourceFactory),
-                  new DefaultDataSourceFactory(context, null, mediaDataSourceFactory))
+              new DefaultDashChunkSource.Factory(mediaDataSourceFactory),
+              new DefaultDataSourceFactory(context, null, mediaDataSourceFactory))
               .createMediaSource(uri);
         case C.TYPE_HLS:
           return new HlsMediaSource.Factory(mediaDataSourceFactory).createMediaSource(uri);
@@ -121,10 +123,9 @@ public class VideoPlayerPlugin implements MethodCallHandler {
           return new ExtractorMediaSource.Factory(mediaDataSourceFactory)
               .setExtractorsFactory(new DefaultExtractorsFactory())
               .createMediaSource(uri);
-        default:
-          {
-            throw new IllegalStateException("Unsupported type: " + type);
-          }
+        default: {
+          throw new IllegalStateException("Unsupported type: " + type);
+        }
       }
     }
 
@@ -151,11 +152,9 @@ public class VideoPlayerPlugin implements MethodCallHandler {
       setAudioAttributes(exoPlayer);
 
       exoPlayer.addListener(
-          new DefaultEventListener() {
+          new Player.EventListener() {
 
-            @Override
-            public void onPlayerStateChanged(final boolean playWhenReady, final int playbackState) {
-              super.onPlayerStateChanged(playWhenReady, playbackState);
+            @Override public void onPlayerStateChanged(final boolean playWhenReady, final int playbackState) {
               if (playbackState == Player.STATE_BUFFERING) {
                 Map<String, Object> event = new HashMap<>();
                 event.put("event", "bufferingUpdate");
@@ -169,12 +168,42 @@ public class VideoPlayerPlugin implements MethodCallHandler {
               }
             }
 
-            @Override
-            public void onPlayerError(final ExoPlaybackException error) {
-              super.onPlayerError(error);
+            @Override public void onPlayerError(final ExoPlaybackException error) {
               if (eventSink != null) {
                 eventSink.error("VideoError", "Video player had error " + error, null);
               }
+            }
+
+            @Override public void onTimelineChanged(Timeline timeline, Object manifest, int reason) {
+              Log.e(TAG, "timeline: " + timeline);
+            }
+
+            @Override public void onTracksChanged(TrackGroupArray trackGroups, TrackSelectionArray trackSelections) {
+              Log.e(TAG, "onTracksChanged: " + trackGroups);
+            }
+
+            @Override public void onLoadingChanged(boolean isLoading) {
+              Log.e(TAG, "isLoading: " + isLoading);
+            }
+
+            @Override public void onRepeatModeChanged(int repeatMode) {
+              Log.e(TAG, "repeatMode: " + repeatMode);
+            }
+
+            @Override public void onShuffleModeEnabledChanged(boolean shuffleModeEnabled) {
+              Log.e(TAG, "shuffleModeEnabled: " + shuffleModeEnabled);
+            }
+
+            @Override public void onPositionDiscontinuity(int reason) {
+              Log.e(TAG, "onPositionDiscontinuity: " + reason);
+            }
+
+            @Override public void onPlaybackParametersChanged(PlaybackParameters playbackParameters) {
+              Log.e(TAG, "onPlaybackParametersChanged: " + playbackParameters);
+            }
+
+            @Override public void onSeekProcessed() {
+              Log.e(TAG, "onSeekProcessed");
             }
           });
 
@@ -189,7 +218,7 @@ public class VideoPlayerPlugin implements MethodCallHandler {
         exoPlayer.setAudioAttributes(
             new AudioAttributes.Builder().setContentType(C.CONTENT_TYPE_MOVIE).build());
       } else {
-        exoPlayer.setAudioStreamType(AudioManager.STREAM_MUSIC);
+        exoPlayer.setAudioStreamType(C.STREAM_TYPE_MUSIC);
       }
     }
 
@@ -262,21 +291,18 @@ public class VideoPlayerPlugin implements MethodCallHandler {
         new MethodChannel(registrar.messenger(), "flutter.io/videoPlayer");
     channel.setMethodCallHandler(plugin);
     registrar.addViewDestroyListener(
-        new PluginRegistry.ViewDestroyListener() {
-          @Override
-          public boolean onViewDestroy(FlutterNativeView view) {
-            plugin.onDestroy();
-            return false; // We are not interested in assuming ownership of the NativeView.
-          }
+        view -> {
+          plugin.onDestroy();
+          return false; // We are not interested in assuming ownership of the NativeView.
         });
   }
 
   private VideoPlayerPlugin(Registrar registrar) {
     this.registrar = registrar;
-    this.videoPlayers = new HashMap<>();
+    this.videoPlayers = new LongSparseArray<>();
   }
 
-  private final Map<Long, VideoPlayer> videoPlayers;
+  private final LongSparseArray<VideoPlayer> videoPlayers;
 
   private final Registrar registrar;
 
@@ -285,8 +311,8 @@ public class VideoPlayerPlugin implements MethodCallHandler {
     // of VideoPlayer. Once https://github.com/flutter/flutter/issues/19358 is resolved this may
     // be replaced with just asserting that videoPlayers.isEmpty().
     // https://github.com/flutter/flutter/issues/20989 tracks this.
-    for (VideoPlayer player : videoPlayers.values()) {
-      player.dispose();
+    for (int i = 0; i < videoPlayers.size(); i++) {
+      videoPlayers.valueAt(i).dispose();
     }
     videoPlayers.clear();
   }
@@ -300,73 +326,71 @@ public class VideoPlayerPlugin implements MethodCallHandler {
     }
     switch (call.method) {
       case "init":
-        for (VideoPlayer player : videoPlayers.values()) {
-          player.dispose();
+        for (int i = 0; i < videoPlayers.size(); i++) {
+          videoPlayers.valueAt(i).dispose();
         }
         videoPlayers.clear();
         break;
-      case "create":
-        {
-          TextureRegistry.SurfaceTextureEntry handle = textures.createSurfaceTexture();
-          EventChannel eventChannel =
-              new EventChannel(
-                  registrar.messenger(), "flutter.io/videoPlayer/videoEvents" + handle.id());
+      case "create": {
+        TextureRegistry.SurfaceTextureEntry handle = textures.createSurfaceTexture();
+        EventChannel eventChannel =
+            new EventChannel(
+                registrar.messenger(), "flutter.io/videoPlayer/videoEvents" + handle.id());
 
-          VideoPlayer player;
-          if (call.argument("asset") != null) {
-            String assetLookupKey;
-            if (call.argument("package") != null) {
-              assetLookupKey =
-                  registrar.lookupKeyForAsset(
-                      (String) call.argument("asset"), (String) call.argument("package"));
-            } else {
-              assetLookupKey = registrar.lookupKeyForAsset((String) call.argument("asset"));
-            }
-            player =
-                new VideoPlayer(
-                    registrar.context(),
-                    eventChannel,
-                    handle,
-                    "asset:///" + assetLookupKey,
-                    result);
-            videoPlayers.put(handle.id(), player);
+        VideoPlayer player;
+        if (call.argument("asset") != null) {
+          String assetLookupKey;
+          if (call.argument("package") != null) {
+            assetLookupKey =
+                registrar.lookupKeyForAsset(
+                    call.argument("asset"), call.argument("package"));
           } else {
-            player =
-                new VideoPlayer(
-                    registrar.context(),
-                    eventChannel,
-                    handle,
-                    (String) call.argument("uri"),
-                    result);
-            videoPlayers.put(handle.id(), player);
+            assetLookupKey = registrar.lookupKeyForAsset(call.argument("asset"));
           }
-          break;
+          player =
+              new VideoPlayer(
+                  registrar.context(),
+                  eventChannel,
+                  handle,
+                  "asset:///" + assetLookupKey,
+                  result);
+          videoPlayers.put(handle.id(), player);
+        } else {
+          player =
+              new VideoPlayer(
+                  registrar.context(),
+                  eventChannel,
+                  handle,
+                  call.argument("uri"),
+                  result);
+          videoPlayers.put(handle.id(), player);
         }
-      default:
-        {
-          long textureId = ((Number) call.argument("textureId")).longValue();
-          VideoPlayer player = videoPlayers.get(textureId);
-          if (player == null) {
-            result.error(
-                "Unknown textureId",
-                "No video player associated with texture id " + textureId,
-                null);
-            return;
-          }
-          onMethodCall(call, result, textureId, player);
-          break;
+        break;
+      }
+      default: {
+        long textureId = ((Number) call.argument("textureId")).longValue();
+        VideoPlayer player = videoPlayers.get(textureId);
+        if (player == null) {
+          result.error(
+              "Unknown textureId",
+              "No video player associated with texture id " + textureId,
+              null);
+          return;
         }
+        onMethodCall(call, result, textureId, player);
+        break;
+      }
     }
   }
 
   private void onMethodCall(MethodCall call, Result result, long textureId, VideoPlayer player) {
     switch (call.method) {
       case "setLooping":
-        player.setLooping((Boolean) call.argument("looping"));
+        player.setLooping(call.argument("looping"));
         result.success(null);
         break;
       case "setVolume":
-        player.setVolume((Double) call.argument("volume"));
+        player.setVolume(call.argument("volume"));
         result.success(null);
         break;
       case "play":

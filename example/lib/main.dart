@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-/// An example of using the plugin, controlling lifecycle and playback of the
-/// video.
-
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:video_player/video_player.dart';
+import 'package:video_player/src/video_player.dart';
+
+/// An example of using the plugin, controlling lifecycle and playback of the
+/// video.
 
 /// Controls play and pause of [controller].
 ///
@@ -363,7 +363,7 @@ void main() {
   runApp(
     MaterialApp(
       home: DefaultTabController(
-        length: 2,
+        length: 3,
         child: Scaffold(
           appBar: AppBar(
             title: const Text('Video player example'),
@@ -371,6 +371,7 @@ void main() {
               isScrollable: true,
               tabs: <Widget>[
                 Tab(icon: Icon(Icons.fullscreen)),
+                Tab(icon: Icon(Icons.cake)),
                 Tab(icon: Icon(Icons.list)),
               ],
             ),
@@ -379,11 +380,11 @@ void main() {
             children: <Widget>[
               Column(
                 children: <Widget>[
-                  NetworkPlayerLifeCycle(
-                    'http://www.sample-videos.com/video123/mp4/720/big_buck_bunny_720p_20mb.mp4',
-                    (BuildContext context, VideoPlayerController controller) =>
-                        AspectRatioVideo(controller),
-                  ),
+//                  NetworkPlayerLifeCycle(
+//                    'http://www.sample-videos.com/video123/mp4/720/big_buck_bunny_720p_20mb.mp4',
+//                    (BuildContext context, VideoPlayerController controller) =>
+//                        AspectRatioVideo(controller),
+//                  ),
                   Container(
                     padding: const EdgeInsets.only(top: 20.0),
                   ),
@@ -395,7 +396,8 @@ void main() {
                 ],
               ),
               NetworkPlayerLifeCycle(
-                'http://www.sample-videos.com/video123/mp4/720/big_buck_bunny_720p_20mb.mp4',
+                'https://cn2.zuidadianying.com/20190215/B4lzlrTt/index.m3u8',
+//                'https://cdn.letv-cdn.com/2018/12/05/JOCeEEUuoteFrjCg/playlist.m3u8',
                 (BuildContext context, VideoPlayerController controller) =>
                     AspectRatioVideo(controller),
               ),

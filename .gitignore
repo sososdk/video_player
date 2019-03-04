@@ -8,3 +8,5 @@ build/
 
 .idea
 *.iml
+res/values/
+lib/generated/i18n.dart

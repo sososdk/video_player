@@ -5,16 +5,13 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:meta/meta.dart';
 
 final MethodChannel _channel = const MethodChannel('flutter.io/videoPlayer')
-  // This will clear all open videos on the platform when a full restart is
-  // performed.
-  // TODO(amirh): remove this on when the invokeMethod update makes it to stable Flutter.
-  // https://github.com/flutter/flutter/issues/26431
-  // ignore: strong_mode_implicit_dynamic_method
+// This will clear all open videos on the platform when a full restart is
+// performed.
   ..invokeMethod('init');
 
 class DurationRange {
@@ -42,10 +39,12 @@ class VideoPlayerValue {
     @required this.duration,
     this.size,
     this.position = const Duration(),
+    this.previewPosition,
     this.buffered = const <DurationRange>[],
     this.isPlaying = false,
     this.isLooping = false,
     this.isBuffering = false,
+    this.isKeepUp = false,
     this.volume = 1.0,
     this.errorDescription,
   });
@@ -63,6 +62,9 @@ class VideoPlayerValue {
   /// The current playback position.
   final Duration position;
 
+  /// The preview position.
+  final Duration previewPosition;
+
   /// The currently buffered ranges.
   final List<DurationRange> buffered;
 
@@ -74,6 +76,9 @@ class VideoPlayerValue {
 
   /// True if the video is currently buffering.
   final bool isBuffering;
+
+  /// True if the video is playing actually.
+  final bool isKeepUp;
 
   /// The current volume of the playback.
   final double volume;
@@ -89,17 +94,25 @@ class VideoPlayerValue {
   final Size size;
 
   bool get initialized => duration != null;
+
   bool get hasError => errorDescription != null;
-  double get aspectRatio => size != null ? size.width / size.height : 1.0;
+
+  bool get isPreview => previewPosition != null;
+
+  double get aspectRatio {
+    return size != null ? size.aspectRatio : 16.0 / 9.0;
+  }
 
   VideoPlayerValue copyWith({
     Duration duration,
     Size size,
     Duration position,
+    Duration previewPosition,
     List<DurationRange> buffered,
     bool isPlaying,
     bool isLooping,
     bool isBuffering,
+    bool isKeepUp,
     double volume,
     String errorDescription,
   }) {
@@ -107,12 +120,46 @@ class VideoPlayerValue {
       duration: duration ?? this.duration,
       size: size ?? this.size,
       position: position ?? this.position,
+      previewPosition: previewPosition ?? this.previewPosition,
       buffered: buffered ?? this.buffered,
       isPlaying: isPlaying ?? this.isPlaying,
       isLooping: isLooping ?? this.isLooping,
       isBuffering: isBuffering ?? this.isBuffering,
+      isKeepUp: isKeepUp ?? this.isKeepUp,
       volume: volume ?? this.volume,
       errorDescription: errorDescription ?? this.errorDescription,
+    );
+  }
+
+  VideoPlayerValue clearError() {
+    return VideoPlayerValue(
+      duration: this.duration,
+      size: this.size,
+      position: this.position,
+      previewPosition: this.previewPosition,
+      buffered: this.buffered,
+      isPlaying: this.isPlaying,
+      isLooping: this.isLooping,
+      isBuffering: this.isBuffering,
+      isKeepUp: this.isKeepUp,
+      volume: this.volume,
+      errorDescription: null,
+    );
+  }
+
+  VideoPlayerValue clearPreview() {
+    return VideoPlayerValue(
+      duration: this.duration,
+      size: this.size,
+      position: this.position,
+      previewPosition: null,
+      buffered: this.buffered,
+      isPlaying: this.isPlaying,
+      isLooping: this.isLooping,
+      isBuffering: this.isBuffering,
+      isKeepUp: this.isKeepUp,
+      volume: this.volume,
+      errorDescription: this.errorDescription,
     );
   }
 
@@ -125,7 +172,7 @@ class VideoPlayerValue {
         'buffered: [${buffered.join(', ')}], '
         'isPlaying: $isPlaying, '
         'isLooping: $isLooping, '
-        'isBuffering: $isBuffering'
+        'isBuffering: $isBuffering, '
         'volume: $volume, '
         'errorDescription: $errorDescription)';
   }
@@ -191,6 +238,9 @@ class VideoPlayerController extends ValueNotifier<VideoPlayerValue> {
   int get textureId => _textureId;
 
   Future<void> initialize() async {
+    if (value.hasError) {
+      value = value.clearError();
+    }
     _lifeCycleObserver = _VideoAppLifeCycleObserver(this);
     _lifeCycleObserver.initialize();
     _creatingCompleter = Completer<void>();
@@ -208,9 +258,6 @@ class VideoPlayerController extends ValueNotifier<VideoPlayerValue> {
       case DataSourceType.file:
         dataSourceDescription = <String, dynamic>{'uri': dataSource};
     }
-    // TODO(amirh): remove this on when the invokeMethod update makes it to stable Flutter.
-    // https://github.com/flutter/flutter/issues/26431
-    // ignore: strong_mode_implicit_dynamic_method
     final Map<dynamic, dynamic> response = await _channel.invokeMethod(
       'create',
       dataSourceDescription,
@@ -257,6 +304,12 @@ class VideoPlayerController extends ValueNotifier<VideoPlayerValue> {
         case 'bufferingEnd':
           value = value.copyWith(isBuffering: false);
           break;
+        case 'keepUpStart':
+          value = value.copyWith(isKeepUp: true);
+          break;
+        case 'keepUpEnd':
+          value = value.copyWith(isKeepUp: false);
+          break;
       }
     }
 
@@ -284,9 +337,6 @@ class VideoPlayerController extends ValueNotifier<VideoPlayerValue> {
         _isDisposed = true;
         _timer?.cancel();
         await _eventSubscription?.cancel();
-        // TODO(amirh): remove this on when the invokeMethod update makes it to stable Flutter.
-        // https://github.com/flutter/flutter/issues/26431
-        // ignore: strong_mode_implicit_dynamic_method
         await _channel.invokeMethod(
           'dispose',
           <String, dynamic>{'textureId': _textureId},
@@ -317,9 +367,6 @@ class VideoPlayerController extends ValueNotifier<VideoPlayerValue> {
     if (!value.initialized || _isDisposed) {
       return;
     }
-    // TODO(amirh): remove this on when the invokeMethod update makes it to stable Flutter.
-    // https://github.com/flutter/flutter/issues/26431
-    // ignore: strong_mode_implicit_dynamic_method
     _channel.invokeMethod(
       'setLooping',
       <String, dynamic>{'textureId': _textureId, 'looping': value.isLooping},
@@ -331,9 +378,6 @@ class VideoPlayerController extends ValueNotifier<VideoPlayerValue> {
       return;
     }
     if (value.isPlaying) {
-      // TODO(amirh): remove this on when the invokeMethod update makes it to stable Flutter.
-      // https://github.com/flutter/flutter/issues/26431
-      // ignore: strong_mode_implicit_dynamic_method
       await _channel.invokeMethod(
         'play',
         <String, dynamic>{'textureId': _textureId},
@@ -348,14 +392,13 @@ class VideoPlayerController extends ValueNotifier<VideoPlayerValue> {
           if (_isDisposed) {
             return;
           }
-          value = value.copyWith(position: newPosition);
+          if (newPosition != value.position) {
+            value = value.copyWith(position: newPosition);
+          }
         },
       );
     } else {
       _timer?.cancel();
-      // TODO(amirh): remove this on when the invokeMethod update makes it to stable Flutter.
-      // https://github.com/flutter/flutter/issues/26431
-      // ignore: strong_mode_implicit_dynamic_method
       await _channel.invokeMethod(
         'pause',
         <String, dynamic>{'textureId': _textureId},
@@ -367,9 +410,6 @@ class VideoPlayerController extends ValueNotifier<VideoPlayerValue> {
     if (!value.initialized || _isDisposed) {
       return;
     }
-    // TODO(amirh): remove this on when the invokeMethod update makes it to stable Flutter.
-    // https://github.com/flutter/flutter/issues/26431
-    // ignore: strong_mode_implicit_dynamic_method
     await _channel.invokeMethod(
       'setVolume',
       <String, dynamic>{'textureId': _textureId, 'volume': value.volume},
@@ -382,9 +422,6 @@ class VideoPlayerController extends ValueNotifier<VideoPlayerValue> {
       return null;
     }
     return Duration(
-      // TODO(amirh): remove this on when the invokeMethod update makes it to stable Flutter.
-      // https://github.com/flutter/flutter/issues/26431
-      // ignore: strong_mode_implicit_dynamic_method
       milliseconds: await _channel.invokeMethod(
         'position',
         <String, dynamic>{'textureId': _textureId},
@@ -392,8 +429,26 @@ class VideoPlayerController extends ValueNotifier<VideoPlayerValue> {
     );
   }
 
+  void seekToPreview({bool isPreview = false, Duration moment}) {
+    if (!value.initialized || _isDisposed) {
+      return;
+    }
+    if (isPreview) {
+      if (moment > value.duration) {
+        moment = value.duration;
+      } else if (moment < const Duration()) {
+        moment = const Duration();
+      }
+      value = value.copyWith(previewPosition: moment);
+    } else {
+      moment = value.previewPosition;
+      value = value.clearPreview();
+      seekTo(moment);
+    }
+  }
+
   Future<void> seekTo(Duration moment) async {
-    if (_isDisposed) {
+    if (!value.initialized || _isDisposed) {
       return;
     }
     if (moment > value.duration) {
@@ -401,14 +456,13 @@ class VideoPlayerController extends ValueNotifier<VideoPlayerValue> {
     } else if (moment < const Duration()) {
       moment = const Duration();
     }
-    // TODO(amirh): remove this on when the invokeMethod update makes it to stable Flutter.
-    // https://github.com/flutter/flutter/issues/26431
-    // ignore: strong_mode_implicit_dynamic_method
     await _channel.invokeMethod('seekTo', <String, dynamic>{
       'textureId': _textureId,
       'location': moment.inMilliseconds,
     });
-    value = value.copyWith(position: moment);
+    if (moment != value.position) {
+      value = value.copyWith(position: moment);
+    }
   }
 
   /// Sets the audio volume of [this].
@@ -489,15 +543,16 @@ class _VideoPlayerState extends State<VideoPlayer> {
   @override
   void didUpdateWidget(VideoPlayer oldWidget) {
     super.didUpdateWidget(oldWidget);
-    oldWidget.controller.removeListener(_listener);
-    _textureId = widget.controller.textureId;
-    widget.controller.addListener(_listener);
+    if (oldWidget.controller != widget.controller) {
+      _textureId = widget.controller.textureId;
+      widget.controller.addListener(_listener);
+    }
   }
 
   @override
-  void deactivate() {
-    super.deactivate();
+  void dispose() {
     widget.controller.removeListener(_listener);
+    super.dispose();
   }
 
   @override
@@ -626,9 +681,9 @@ class _VideoProgressIndicatorState extends State<VideoProgressIndicator> {
   }
 
   @override
-  void deactivate() {
+  void dispose() {
     controller.removeListener(listener);
-    super.deactivate();
+    super.dispose();
   }
 
   @override
