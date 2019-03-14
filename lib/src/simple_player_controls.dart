@@ -4,6 +4,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:video_player/src/video_player.dart';
 
 bool hasHours(Duration duration) {
@@ -130,11 +131,8 @@ class _SimplePlayerControlsState extends State<SimplePlayerControls> {
   void _initialize() {
     controller.addListener(_updateState);
     _updateState();
-    if (controller.value.isPlaying) {
-      _startHideTimer();
-    }
     _initTimer = Timer(Duration(milliseconds: 200), () {
-      setState(() => _hideStuff = false);
+      _showControls();
     });
   }
 
@@ -208,14 +206,7 @@ class _SimplePlayerControlsState extends State<SimplePlayerControls> {
   Widget _buildHitArea() {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTap: controller.value.isPlaying
-          ? _toggleControls
-          : () {
-              _hideTimer?.cancel();
-              setState(() {
-                _hideStuff = false;
-              });
-            },
+      onTap: _toggleControls,
     );
   }
 
@@ -357,25 +348,25 @@ class _SimplePlayerControlsState extends State<SimplePlayerControls> {
     );
   }
 
-  void _cancelAndRestartTimer() {
-    _hideTimer?.cancel();
-    setState(() {
-      _hideStuff = false;
-      _startHideTimer();
-    });
-  }
-
   void _hideControls() {
+    if (widget.isFullscreen) {
+      SystemChrome.setEnabledSystemUIOverlays([]);
+    }
     _hideTimer?.cancel();
-    setState(() => _hideStuff = true);
+    _hideStuff = true;
+    setState(() {});
   }
 
   void _showControls() {
+    if (widget.isFullscreen) {
+      SystemChrome.setEnabledSystemUIOverlays(SystemUiOverlay.values);
+    }
     _hideTimer?.cancel();
-    setState(() {
-      _hideStuff = false;
+    if (controller.value.isPlaying) {
       _startHideTimer();
-    });
+    }
+    _hideStuff = false;
+    setState(() {});
   }
 
   void _toggleControls() {
@@ -412,24 +403,22 @@ class _SimplePlayerControlsState extends State<SimplePlayerControls> {
   void _playPause() {
     setState(() {
       if (controller.value.isPlaying) {
-        _hideStuff = false;
-        _hideTimer?.cancel();
         controller.pause();
+        _showControls();
       } else {
-        _cancelAndRestartTimer();
-
         if (controller.value.initialized) {
           controller.play();
         } else {
           controller.initialize();
           controller.play();
         }
+        _showControls();
       }
     });
   }
 
   void _skipBack() {
-    _cancelAndRestartTimer();
+    _showControls();
     final beginning = Duration(seconds: 0).inMilliseconds;
     final skip =
         (controller.value.position - Duration(seconds: 15)).inMilliseconds;
@@ -437,7 +426,7 @@ class _SimplePlayerControlsState extends State<SimplePlayerControls> {
   }
 
   void _skipForward() {
-    _cancelAndRestartTimer();
+    _showControls();
     final end = controller.value.duration?.inMilliseconds ?? 0;
     final skip =
         (controller.value.position + Duration(seconds: 15)).inMilliseconds;
@@ -446,7 +435,7 @@ class _SimplePlayerControlsState extends State<SimplePlayerControls> {
 
   void _startHideTimer() {
     _hideTimer = Timer(const Duration(seconds: 10), () {
-      setState(() => _hideStuff = true);
+      _hideControls();
     });
   }
 
