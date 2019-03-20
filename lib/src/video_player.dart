@@ -173,6 +173,7 @@ class VideoPlayerValue {
         'isPlaying: $isPlaying, '
         'isLooping: $isLooping, '
         'isBuffering: $isBuffering, '
+        'isKeepUp: $isKeepUp, '
         'volume: $volume, '
         'errorDescription: $errorDescription)';
   }

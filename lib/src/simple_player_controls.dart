@@ -4,7 +4,6 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:video_player/src/video_player.dart';
 
 bool hasHours(Duration duration) {
@@ -55,6 +54,8 @@ class SimplePlayerControls extends StatefulWidget {
   final bool isFullscreen;
   final Color backgroundColor;
   final Color iconColor;
+  final VoidCallback onShowControls;
+  final VoidCallback onHideControls;
 
   const SimplePlayerControls({
     Key key,
@@ -64,6 +65,8 @@ class SimplePlayerControls extends StatefulWidget {
     this.isFullscreen = false,
     this.backgroundColor: const Color.fromRGBO(41, 41, 41, 0.7),
     this.iconColor: const Color.fromARGB(255, 200, 200, 200),
+    this.onShowControls,
+    this.onHideControls,
   })  : assert(onExpandCollapse != null),
         super(key: key);
 
@@ -259,14 +262,11 @@ class _SimplePlayerControlsState extends State<SimplePlayerControls> {
   }
 
   Widget _buildRemaining(Color iconColor) {
-    final duration = controller.value.duration;
-    final position = controller.value.duration != null
-        ? controller.value.duration - controller.value.position
-        : Duration(seconds: 0);
+    final duration = controller.value.duration ?? Duration();
     final bool hours = hasHours(duration);
     final textStyle = TextStyle(color: iconColor, fontSize: 10.0);
     double minWidth = checkTextFits(TextSpan(
-      text: hours ? '-44:44:44' : '-44:44',
+      text: hours ? '44:44:44' : '44:44',
       style: textStyle,
     )).width;
     return Padding(
@@ -276,7 +276,7 @@ class _SimplePlayerControlsState extends State<SimplePlayerControls> {
         child: Container(
           alignment: Alignment.centerLeft,
           child: Text(
-            '-${formatDuration(hours, position)}',
+            '${formatDuration(hours, duration)}',
             style: textStyle,
           ),
         ),
@@ -349,8 +349,8 @@ class _SimplePlayerControlsState extends State<SimplePlayerControls> {
   }
 
   void _hideControls() {
-    if (widget.isFullscreen) {
-      SystemChrome.setEnabledSystemUIOverlays([]);
+    if (widget.onHideControls != null) {
+      widget.onHideControls();
     }
     _hideTimer?.cancel();
     _hideStuff = true;
@@ -358,8 +358,8 @@ class _SimplePlayerControlsState extends State<SimplePlayerControls> {
   }
 
   void _showControls() {
-    if (widget.isFullscreen) {
-      SystemChrome.setEnabledSystemUIOverlays(SystemUiOverlay.values);
+    if (widget.onShowControls != null) {
+      widget.onShowControls();
     }
     _hideTimer?.cancel();
     if (controller.value.isPlaying) {

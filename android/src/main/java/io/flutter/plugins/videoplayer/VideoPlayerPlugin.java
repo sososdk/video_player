@@ -7,34 +7,37 @@ package io.flutter.plugins.videoplayer;
 import android.content.Context;
 import android.net.Uri;
 import android.os.Build;
-import android.util.Log;
+import android.os.Environment;
+import android.os.Handler;
 import android.util.LongSparseArray;
 import android.view.Surface;
 import com.google.android.exoplayer2.C;
 import com.google.android.exoplayer2.ExoPlaybackException;
 import com.google.android.exoplayer2.ExoPlayerFactory;
 import com.google.android.exoplayer2.Format;
-import com.google.android.exoplayer2.PlaybackParameters;
 import com.google.android.exoplayer2.Player;
 import com.google.android.exoplayer2.SimpleExoPlayer;
-import com.google.android.exoplayer2.Timeline;
 import com.google.android.exoplayer2.audio.AudioAttributes;
 import com.google.android.exoplayer2.extractor.DefaultExtractorsFactory;
 import com.google.android.exoplayer2.source.ExtractorMediaSource;
 import com.google.android.exoplayer2.source.MediaSource;
-import com.google.android.exoplayer2.source.TrackGroupArray;
 import com.google.android.exoplayer2.source.dash.DashMediaSource;
 import com.google.android.exoplayer2.source.dash.DefaultDashChunkSource;
 import com.google.android.exoplayer2.source.hls.HlsMediaSource;
 import com.google.android.exoplayer2.source.smoothstreaming.DefaultSsChunkSource;
 import com.google.android.exoplayer2.source.smoothstreaming.SsMediaSource;
 import com.google.android.exoplayer2.trackselection.DefaultTrackSelector;
-import com.google.android.exoplayer2.trackselection.TrackSelectionArray;
 import com.google.android.exoplayer2.trackselection.TrackSelector;
 import com.google.android.exoplayer2.upstream.DataSource;
 import com.google.android.exoplayer2.upstream.DefaultDataSourceFactory;
 import com.google.android.exoplayer2.upstream.DefaultHttpDataSource;
 import com.google.android.exoplayer2.upstream.DefaultHttpDataSourceFactory;
+import com.google.android.exoplayer2.upstream.FileDataSourceFactory;
+import com.google.android.exoplayer2.upstream.cache.Cache;
+import com.google.android.exoplayer2.upstream.cache.CacheDataSource;
+import com.google.android.exoplayer2.upstream.cache.CacheDataSourceFactory;
+import com.google.android.exoplayer2.upstream.cache.NoOpCacheEvictor;
+import com.google.android.exoplayer2.upstream.cache.SimpleCache;
 import com.google.android.exoplayer2.util.Util;
 import io.flutter.plugin.common.EventChannel;
 import io.flutter.plugin.common.MethodCall;
@@ -43,6 +46,7 @@ import io.flutter.plugin.common.MethodChannel.MethodCallHandler;
 import io.flutter.plugin.common.MethodChannel.Result;
 import io.flutter.plugin.common.PluginRegistry.Registrar;
 import io.flutter.view.TextureRegistry;
+import java.io.File;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
@@ -59,6 +63,7 @@ public class VideoPlayerPlugin implements MethodCallHandler {
   private static class VideoPlayer {
 
     private SimpleExoPlayer exoPlayer;
+    private Cache cache;
 
     private Surface surface;
 
@@ -69,6 +74,9 @@ public class VideoPlayerPlugin implements MethodCallHandler {
     private final EventChannel eventChannel;
 
     private boolean isInitialized = false;
+
+    private final Handler handler = new Handler();
+    private final Runnable updateProgressAction = this::postBufferingUpdate;
 
     VideoPlayer(
         Context context,
@@ -81,6 +89,8 @@ public class VideoPlayerPlugin implements MethodCallHandler {
 
       TrackSelector trackSelector = new DefaultTrackSelector();
       exoPlayer = ExoPlayerFactory.newSimpleInstance(context, trackSelector);
+      File downloadContentDirectory = new File(context.getFilesDir(), Environment.DIRECTORY_DOWNLOADS);
+      cache = new SimpleCache(downloadContentDirectory, new NoOpCacheEvictor());
 
       Uri uri = Uri.parse(dataSource);
 
@@ -88,19 +98,32 @@ public class VideoPlayerPlugin implements MethodCallHandler {
       if ("asset".equals(uri.getScheme()) || "file".equals(uri.getScheme())) {
         dataSourceFactory = new DefaultDataSourceFactory(context, "ExoPlayer");
       } else {
-        dataSourceFactory =
+        DataSource.Factory httpDataSourceFactory =
             new DefaultHttpDataSourceFactory(
                 "ExoPlayer",
                 null,
                 DefaultHttpDataSource.DEFAULT_CONNECT_TIMEOUT_MILLIS,
                 DefaultHttpDataSource.DEFAULT_READ_TIMEOUT_MILLIS,
                 true);
+        DefaultDataSourceFactory upstreamFactory = new DefaultDataSourceFactory(context, httpDataSourceFactory);
+        dataSourceFactory = buildCacheDataSource(upstreamFactory, cache);
       }
 
       MediaSource mediaSource = buildMediaSource(uri, dataSourceFactory, context);
       exoPlayer.prepare(mediaSource);
 
       setupVideoPlayer(eventChannel, textureEntry, result);
+    }
+
+    private static CacheDataSourceFactory buildCacheDataSource(
+        DefaultDataSourceFactory upstreamFactory, Cache cache) {
+      return new CacheDataSourceFactory(
+          cache,
+          upstreamFactory,
+          new FileDataSourceFactory(),
+          /* cacheWriteDataSinkFactory= */ null,
+          CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR,
+          /* eventListener= */ null);
     }
 
     private MediaSource buildMediaSource(
@@ -157,14 +180,14 @@ public class VideoPlayerPlugin implements MethodCallHandler {
             @Override public void onPlayerStateChanged(final boolean playWhenReady, final int playbackState) {
               if (playbackState == Player.STATE_BUFFERING) {
                 Map<String, Object> event = new HashMap<>();
-                event.put("event", "bufferingUpdate");
-                List<Integer> range = Arrays.asList(0, exoPlayer.getBufferedPercentage());
-                // iOS supports a list of buffered ranges, so here is a list with a single range.
-                event.put("values", Collections.singletonList(range));
+                event.put("event", "keepUpEnd");
                 eventSink.success(event);
-              } else if (playbackState == Player.STATE_READY && !isInitialized) {
-                isInitialized = true;
+              } else if (playbackState == Player.STATE_READY) {
                 sendInitialized();
+
+                Map<String, Object> event = new HashMap<>();
+                event.put("event", "keepUpStart");
+                eventSink.success(event);
               }
             }
 
@@ -174,36 +197,18 @@ public class VideoPlayerPlugin implements MethodCallHandler {
               }
             }
 
-            @Override public void onTimelineChanged(Timeline timeline, Object manifest, int reason) {
-              Log.e(TAG, "timeline: " + timeline);
-            }
-
-            @Override public void onTracksChanged(TrackGroupArray trackGroups, TrackSelectionArray trackSelections) {
-              Log.e(TAG, "onTracksChanged: " + trackGroups);
-            }
-
             @Override public void onLoadingChanged(boolean isLoading) {
-              Log.e(TAG, "isLoading: " + isLoading);
-            }
-
-            @Override public void onRepeatModeChanged(int repeatMode) {
-              Log.e(TAG, "repeatMode: " + repeatMode);
-            }
-
-            @Override public void onShuffleModeEnabledChanged(boolean shuffleModeEnabled) {
-              Log.e(TAG, "shuffleModeEnabled: " + shuffleModeEnabled);
-            }
-
-            @Override public void onPositionDiscontinuity(int reason) {
-              Log.e(TAG, "onPositionDiscontinuity: " + reason);
-            }
-
-            @Override public void onPlaybackParametersChanged(PlaybackParameters playbackParameters) {
-              Log.e(TAG, "onPlaybackParametersChanged: " + playbackParameters);
-            }
-
-            @Override public void onSeekProcessed() {
-              Log.e(TAG, "onSeekProcessed");
+              if (isLoading) {
+                postBufferingUpdate();
+                Map<String, Object> event = new HashMap<>();
+                event.put("event", "bufferingStart");
+                eventSink.success(event);
+              } else {
+                removeBufferingUpdate();
+                Map<String, Object> event = new HashMap<>();
+                event.put("event", "bufferingEnd");
+                eventSink.success(event);
+              }
             }
           });
 
@@ -247,8 +252,27 @@ public class VideoPlayerPlugin implements MethodCallHandler {
       return exoPlayer.getCurrentPosition();
     }
 
+    private void removeBufferingUpdate() {
+      handler.removeCallbacks(updateProgressAction);
+    }
+
+    private void postBufferingUpdate() {
+      sendBufferingUpdate();
+      handler.postDelayed(updateProgressAction, 500);
+    }
+
+    private void sendBufferingUpdate() {
+      Map<String, Object> event = new HashMap<>();
+      event.put("event", "bufferingUpdate");
+      List<Long> range = Arrays.asList(0L, exoPlayer.getContentBufferedPosition());
+      // iOS supports a list of buffered ranges, so here is a list with a single range.
+      event.put("values", Collections.singletonList(range));
+      eventSink.success(event);
+    }
+
     private void sendInitialized() {
-      if (isInitialized) {
+      if (!isInitialized) {
+        isInitialized = true;
         Map<String, Object> event = new HashMap<>();
         event.put("event", "initialized");
         event.put("duration", exoPlayer.getDuration());
@@ -271,9 +295,11 @@ public class VideoPlayerPlugin implements MethodCallHandler {
     }
 
     void dispose() {
+      removeBufferingUpdate();
       if (isInitialized) {
         exoPlayer.stop();
       }
+      cache.release();
       textureEntry.release();
       eventChannel.setStreamHandler(null);
       if (surface != null) {
