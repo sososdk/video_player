@@ -186,10 +186,9 @@ class AssetPlayerLifeCycle extends PlayerLifeCycle {
 abstract class _PlayerLifeCycleState extends State<PlayerLifeCycle> {
   VideoPlayerController controller;
 
-  @override
-
   /// Subclasses should implement [createVideoPlayerController], which is used
   /// by this method.
+  @override
   void initState() {
     super.initState();
     controller = createVideoPlayerController();

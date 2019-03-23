@@ -6,7 +6,10 @@
 #import <AVFoundation/AVFoundation.h>
 #import <GLKit/GLKit.h>
 
-int64_t FLTCMTimeToMillis(CMTime time) { return time.value * 1000 / time.timescale; }
+int64_t FLTCMTimeToMillis(CMTime time) {
+    if (time.timescale == 0) return 0;
+    return time.value * 1000 / time.timescale;
+}
 
 @interface FLTFrameUpdater : NSObject
 @property(nonatomic) int64_t textureId;
@@ -242,7 +245,7 @@ static void* playbackBufferFullContext = &playbackBufferFullContext;
     } else if (context == statusContext) {
         AVPlayerItem* item = (AVPlayerItem*)object;
         switch (item.status) {
-                case AVPlayerStatusFailed:
+            case AVPlayerStatusFailed:
                 if (_eventSink != nil) {
                     _eventSink([FlutterError
                                 errorWithCode:@"VideoError"
@@ -251,9 +254,9 @@ static void* playbackBufferFullContext = &playbackBufferFullContext;
                                 details:nil]);
                 }
                 break;
-                case AVPlayerItemStatusUnknown:
+            case AVPlayerItemStatusUnknown:
                 break;
-                case AVPlayerItemStatusReadyToPlay:
+            case AVPlayerItemStatusReadyToPlay:
                 _isInitialized = true;
                 [item addOutput:_videoOutput];
                 [self sendInitialized];
@@ -350,7 +353,7 @@ static inline CGFloat radiansToDegrees(CGFloat radians) {
         toleranceBefore:kCMTimeZero
          toleranceAfter:kCMTimeZero
       completionHandler: ^(BOOL finished){
-          self->_isSeeking = false;
+          self->_isSeeking = !finished;
       }];
 }
 

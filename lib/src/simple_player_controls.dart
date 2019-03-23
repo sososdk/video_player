@@ -239,7 +239,9 @@ class _SimplePlayerControlsState extends State<SimplePlayerControls> {
   Widget _buildPosition(Color iconColor) {
     var value = controller.value;
     final duration = value.duration;
-    final position = value.isPreview ? value.previewPosition : value.position;
+    final position = value.initialized
+        ? (value.isPreview ? value.previewPosition : value.position)
+        : Duration.zero;
     final bool hours = hasHours(duration);
     final textStyle = TextStyle(color: iconColor, fontSize: 10.0);
     double minWidth = checkTextFits(TextSpan(
@@ -419,7 +421,7 @@ class _SimplePlayerControlsState extends State<SimplePlayerControls> {
 
   void _skipBack() {
     _showControls();
-    final beginning = Duration(seconds: 0).inMilliseconds;
+    final beginning = Duration.zero.inMilliseconds;
     final skip =
         (controller.value.position - Duration(seconds: 15)).inMilliseconds;
     controller.seekTo(Duration(milliseconds: math.max(skip, beginning)));

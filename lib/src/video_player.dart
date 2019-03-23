@@ -285,12 +285,13 @@ class VideoPlayerController extends ValueNotifier<VideoPlayerValue> {
                 map['height']?.toDouble() ?? 0.0),
           );
           initializingCompleter.complete(null);
+          _applySeekTo();
           _applyLooping();
           _applyVolume();
           _applyPlayPause();
           break;
         case 'completed':
-          value = value.copyWith(isPlaying: false);
+          value = value.copyWith(isPlaying: false, position: value.duration);
           _timer?.cancel();
           break;
         case 'bufferingUpdate':
@@ -417,6 +418,22 @@ class VideoPlayerController extends ValueNotifier<VideoPlayerValue> {
     );
   }
 
+  Future<void> _applySeekTo() async {
+    if (!value.initialized || _isDisposed) {
+      return;
+    }
+    var moment = value.position;
+    if (moment > value.duration) {
+      moment = value.duration;
+    } else if (moment < Duration.zero) {
+      moment = Duration.zero;
+    }
+    await _channel.invokeMethod('seekTo', <String, dynamic>{
+      'textureId': _textureId,
+      'location': moment.inMilliseconds,
+    });
+  }
+
   /// The position in the current video.
   Future<Duration> get position async {
     if (_isDisposed) {
@@ -449,21 +466,8 @@ class VideoPlayerController extends ValueNotifier<VideoPlayerValue> {
   }
 
   Future<void> seekTo(Duration moment) async {
-    if (!value.initialized || _isDisposed) {
-      return;
-    }
-    if (moment > value.duration) {
-      moment = value.duration;
-    } else if (moment < const Duration()) {
-      moment = const Duration();
-    }
-    await _channel.invokeMethod('seekTo', <String, dynamic>{
-      'textureId': _textureId,
-      'location': moment.inMilliseconds,
-    });
-    if (moment != value.position) {
-      value = value.copyWith(position: moment);
-    }
+    value = value.copyWith(position: moment);
+    await _applySeekTo();
   }
 
   /// Sets the audio volume of [this].
